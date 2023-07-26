@@ -1,9 +1,6 @@
-# InVNTR
-Isolate and neaten VNTRs (InVNTR): A command-line tool for VNTR analysis and visualization.
+# Simple VNTR Extractor
 
-# Updated documentation for 1.4 incoming
-
-## Usage: To isolate VNTR alleles and neaten motifs from genomes.
+## Usage: To extract VNTR alleles and simple motifs from genomes.
 ### Input: 
 *Required:*
 - consistent and unique starting and ending sequence (either first & last motifs or directly outside of them)
@@ -31,7 +28,7 @@ Additionally, for MacOS you will need the module tables, and the homebrew packag
 ### Windows Motif Length Example: 
 Execute this in terminal from the directory you want the output to be in:
 ~~~~
-C:/Users/username/AppData/Local/Programs/Python/Python310/python.exe C:/VNTR/InVNTR_1.4.py -f E:\wholegenomes -s TGGAGCTCCCAGAGCAGCAGGAGGGGCACCTGAAGCACCTAGAGCAGCAGGAGGGACAGC -e TGGAGCAGCAGAAGGGGCAGCTGGAGCAGC -n IVL -l 30
+C:/Users/username/AppData/Local/Programs/Python/Python310/python.exe C:/VNTR/SVNTRE_1.2.py -f E:\wholegenomes -s TGGAGCTCCCAGAGCAGCAGGAGGGGCACCTGAAGCACCTAGAGCAGCAGGAGGGACAGC -e TGGAGCAGCAGAAGGGGCAGCTGGAGCAGC -n IVL -l 30
 ~~~~
 <details>
 <summary>More detailed explanation</summary>
@@ -43,7 +40,7 @@ This example extracts the IVL VNTR. The IVL VNTR is ideal for the motif length o
 ### Windows Delimiter Example: 
 Execute this in terminal from the directory you want the output to be in:
 ~~~~
-C:/Users/username/AppData/Local/Programs/Python/Python310/python.exe C:/VNTR/InVNTR_1.4.py -f E:\wholegenomes -s CATCTCCTCCTCCTCACCTCCTGCTGTGGTGCACAGATACCTATAGGCAGGCTC -e CATCTCCTCCTCCCGAGCTCCTCCCCTAGTGCACAGATACCTATAGGCAGGCTC -n SORL1 -d CATCT
+C:/Users/username/AppData/Local/Programs/Python/Python310/python.exe C:/VNTR/SVNTRE_1.2.py -f E:\wholegenomes -s CATCTCCTCCTCCTCACCTCCTGCTGTGGTGCACAGATACCTATAGGCAGGCTC -e CATCTCCTCCTCCCGAGCTCCTCCCCTAGTGCACAGATACCTATAGGCAGGCTC -n SORL1 -d CATCT
 ~~~~
 <details>
 <summary>More detailed explanation</summary>
@@ -55,7 +52,7 @@ This example extracts the SORL1 VNTR. The SORL1 VNTR is ideal for the delimiter 
 ### Mac Example: 
 Execute this in terminal from the directory you want the output to be in which also contains the .py script file:
 ~~~~
-Python3 InVNTR_1.4.py -f /Volumes/wholegenomes -l 30 -s TGGAGCTCCCAGAGCAGCAGGAGGGGCACCTGAAGCACCTAGAGCAGCAGGAGGGACAGC -e TGGAGCAGCAGAAGGGGCAGCTGGAGCAGC -n IVL
+Python3 SVNTRE_1.2.py -f /Volumes/wholegenomes -l 30 -s TGGAGCTCCCAGAGCAGCAGGAGGGGCACCTGAAGCACCTAGAGCAGCAGGAGGGACAGC -e TGGAGCAGCAGAAGGGGCAGCTGGAGCAGC -n IVL
 ~~~~
 ## Outputs:
 - VNTR.csv                       – excel file with each allele named after the file, cut into simple motifs based on the length or delimiter provided from the beginning of the allele
@@ -68,7 +65,7 @@ Python3 InVNTR_1.4.py -f /Volumes/wholegenomes -l 30 -s TGGAGCTCCCAGAGCAGCAGGAGG
 
 ## Current help flag output:
 
-usage: InVNTR_1.4.py [-h] -f  [-l ] [-d ] -s  -e  [-b ] [-a ] [-t ] [-n ]
+usage: SVNTRE_1.2.py [-h] -f  [-l ] [-d ] -s  -e  [-b ] [-a ] [-t ] [-n ]
 
 Extract VNTR
 
