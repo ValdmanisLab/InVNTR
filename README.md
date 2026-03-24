@@ -6,7 +6,7 @@ InVNTR allows the rapid extraction of tandem repeats from consensus sequences, l
 
 ---
 
-## What's New in Version 1.5
+## What's New in Version 1.5 - README STILL UPDATING 3.25.26
 
 - **Coordinate mode (now default):** You can now specify a VNTR locus using genomic coordinates in interval format (e.g. `chr12:40,479,053-40,491,305` for the VNTR exon of MUC19) instead of manually providing `--start` and `--end` sequences. InVNTR will automatically extract flanking sequences from a reference genome. GRCh38 is the default reference, though T2T coordinates should also work. InVNTR relies on .vcf files to generate wildcards in flanking regions for snp's in the autosome and X chromosome. InVNTR is currently lacking a y chromosome .vcf, so y chromosome coordinates are not currently usable.
 - **`--start` and `--end` are now optional** when using coordinate mode. They remain available if you prefer to provide sequences manually.
@@ -22,7 +22,7 @@ Before running InVNTR 1.5, you need to download the required reference assemblie
 ### 1. Download the setup script
 
 ```
-wget https://raw.githubusercontent.com/ValdmanisLab/InVNTR/main/Stable/setup/setup_script_InVNTR_1.5.py
+wget https://raw.githubusercontent.com/ValdmanisLab/InVNTR/main/Stable/setup_script_InVNTR_1.5.py
 ```
 
 Or clone the repository and find it at `Stable/setup/setup_script_InVNTR_1.5.py`.
@@ -69,7 +69,7 @@ Make sure the following are installed before running the setup script:
 *Required:*
 - `--folder` | directory containing `.fasta` or `.fa` files
 - `--length` **OR** `--delimiter` | if your VNTR has a consistent motif length, provide `--length` as a number of bases per motif. If your VNTR has variable-length motifs, provide `--delimiter`, a set of characters that appear at the start of each motif.
-- `--coordinate` **OR** `--start` | in coordinate mode (default), provide a genomic interval like `chr1:30908354-30908706`. Alternatively, use `--start` to provide the conserved sequence at the beginning of the VNTR directly.
+- `--coordinate` **OR** `--start` | in coordinate mode (default), provide a genomic interval like `chr12:40,479,053-40,491,305`. Alternatively, use `--start` to provide the conserved sequence at the beginning of the VNTR directly.
 
 *When using `--start` manually:*
 - `--end` **OR** `--no_end` | provide a conserved ending sequence, or use `--no_end` with a numerical cutoff if the end is not conserved.
@@ -114,7 +114,7 @@ Outputs are saved in the directory the command is run from. Execute in the termi
 
 ### Coordinate Mode (New Default) — Unix:
 ```bash
-python3 ~/path_to/InVNTR_1.5.py -f /Volumes/wholegenomes -c chr1:30908354-30908706 -l 30 -n IVL
+python3 ~/path_to/InVNTR_1.5.py -f /Volumes/wholegenomes -c chr1:152910255-152911421 -l 30 -n IVL
 ```
 <details>
 <summary>More detailed explanation</summary>
@@ -124,7 +124,7 @@ This uses coordinate mode to extract the IVL VNTR from GRCh38 coordinates. InVNT
 
 ### Coordinate Mode — Windows:
 ```
-python C:\path_to\InVNTR_1.5.py -f E:\wholegenomes -c chr1:30908354-30908706 -l 30 -n IVL
+python C:\path_to\InVNTR_1.5.py -f E:\wholegenomes -c chr1:152910255-152911421 -l 30 -n IVL
 ```
 <br />
 
