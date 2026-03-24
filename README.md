@@ -1,102 +1,215 @@
 # InVNTR
-Isolate and neaten VNTRs (InVNTR): A command-line tool for VNTR analysis and visualization.
-### Details:
-InVNTR allows the rapid extraction of tandem repeats from consensus sequences, like genomic fasta. We use it with high quality long read assemblies, such as those available from the HPRC, HGSVC, and the 1000 Genomes Project. Rather than a reference genome, we use something like in-silico PCR in order to isolate the loci of interest. For this reason, VNTR need to have conserved and unique flanking sequence on at least one side. InVNTR assumes all user arguments have the same strandedness, but will search for reverse complements in fasta if it cannot find sequences that match the arguments.
+Isolate and Neaten VNTRs (InVNTR): A command-line tool for VNTR analysis and visualization.
 
-## Usage: To isolate VNTR alleles and neaten motifs from genomes.
-### Input: 
+### Details:
+InVNTR allows the rapid extraction of tandem repeats from consensus sequences, like genomic FASTA. We use it with high quality long read assemblies, such as those available from the HPRC, HGSVC, and the 1000 Genomes Project. Rather than a reference genome, we use something like in-silico PCR in order to isolate the loci of interest. For this reason, VNTRs need to have conserved and unique flanking sequence. InVNTR assumes all user arguments have the same strandedness, but will search for reverse complements in FASTA if it cannot find sequences that match the arguments.
+
+---
+
+## What's New in Version 1.5
+
+- **Coordinate mode (now default):** You can now specify a VNTR locus using genomic coordinates in interval format (e.g. `chr12:40,479,053-40,491,305` for the VNTR exon of MUC19) instead of manually providing `--start` and `--end` sequences. InVNTR will automatically extract flanking sequences from a reference genome. GRCh38 is the default reference, though T2T coordinates should also work. InVNTR relies on .vcf files to generate wildcards in flanking regions for snp's in the autosome and X chromosome. InVNTR is currently lacking a y chromosome .vcf, so y chromosome coordinates are not currently usable.
+- **`--start` and `--end` are now optional** when using coordinate mode. They remain available if you prefer to provide sequences manually.
+- **Assemblies file is now required** for coordinate mode. See the Setup section below.
+- **Default output is now multi-sheet excel workbook.** See the updated Output section below.
+
+---
+
+## Setup
+
+Before running InVNTR 1.5, you need to download the required reference assemblies. A setup script is provided to automate this.
+
+### 1. Download the setup script
+
+```
+wget https://raw.githubusercontent.com/ValdmanisLab/InVNTR/main/Stable/setup/setup_script_InVNTR_1.5.py
+```
+
+Or clone the repository and find it at `Stable/setup/setup_script_InVNTR_1.5.py`.
+
+### 2. Run the setup script
+
+Run from the directory where you want the assemblies to be downloaded:
+
+```bash
+# Download full assembly manifest and all files
+python3 setup_script_InVNTR_1.5.py
+
+# Download the smaller testing manifest instead (fewer samples, faster to get started)
+python3 setup_script_InVNTR_1.5.py -t
+# or
+python3 setup_script_InVNTR_1.5.py --testing
+```
+
+The `-t` / `--testing` flag uses `assemblies_testing.csv`, which contains a reduced set of samples — useful for testing your setup before committing to the full download.
+
+The setup script will:
+1. Download the appropriate assembly manifest CSV from the InVNTR GitHub repo
+2. Check for missing files and download them from their listed locations (S3 or HTTP)
+3. Decompress and rename files as needed
+4. Generate `.fai` index files for reference sequences using `samtools faidx`
+5. Download 1000 Genomes Project phased VCFs (chromosomes 1–22 + X) from UCSC
+
+### Setup Dependencies
+
+Make sure the following are installed before running the setup script:
+
+- `python3`
+- `pip install requests`
+- `samtools`
+- `pigz`
+- `aws cli` (only required if any files are hosted on S3)
+
+---
+
+## Usage: To Isolate VNTR Alleles and Neaten Motifs from Genomes
+
+### Input:
+
 *Required:*
-- --start | conserved and unique starting sequence, either first motif of the VNTR or sequence directly before the VNTR.
-- --end **OR** --no_end | if you use the end flag, it is used in the same way as the start flag, by providing a conserved and unique ending sequence, either the last motif of the VNTR or the sequence directly following the end of the VNTR. If you use the no_end flag, then you need to specify a numerical value for the sequence to put the end for. This can be useful if the sequence on one end of the VNTR is not conserved.
-- --folder | directory containing .fasta or .fa files
-- --length **OR** --delimiter | if your VNTR has a consistent motif length, you may provide --length as a numerical value for the number of bases in a single repeat motif. If your VNTR has variable length you can provide a delimiter, a set of characters that appear at the beginning of each repeat motif.
+- `--folder` | directory containing `.fasta` or `.fa` files
+- `--length` **OR** `--delimiter` | if your VNTR has a consistent motif length, provide `--length` as a number of bases per motif. If your VNTR has variable-length motifs, provide `--delimiter`, a set of characters that appear at the start of each motif.
+- `--coordinate` **OR** `--start` | in coordinate mode (default), provide a genomic interval like `chr1:30908354-30908706`. Alternatively, use `--start` to provide the conserved sequence at the beginning of the VNTR directly.
+
+*When using `--start` manually:*
+- `--end` **OR** `--no_end` | provide a conserved ending sequence, or use `--no_end` with a numerical cutoff if the end is not conserved.
 
 *Optional:*
-- --after and --before | These variables(y or n, default n) let you specify if the sequence that you used for start and end are before or after the actual VNTR, in case the start of the VNTR is variable or repeated in the VNTR. If you specify y, then InVNTR will remove the length of the start or end from the VNTR in the outputs.
-- --type | filetype (default is .fa or .fasta), which allows you to operate InVNTR on directories which contain other kinds of files.
-- --name | (name to append to output files, default is VNTR)
-- --max_allele_length | Maximum nucleotide length that will be written to the alleles file output, per file. Default is 10,000. This stops the alleles file from getting too large if there is an issue with the start and end.
+- `--reference` / `-r` | reference genome to use with coordinate mode (default: GRCh38; T2T should also work)
+- `--flank` | number of bp for flanking sequences extracted around the coordinate interval (default: 50)
+- `--after` and `--before` | (`y` or `n`, default `n`) specify whether your `--start` or `--end` sequences are outside the VNTR. If `y`, InVNTR removes the length of those sequences from the output.
+- `--type` | filetype to look for in the folder (default: `.fa` or `.fasta`)
+- `--name` | prefix for output files (default: `VNTR`)
+- `--max_allele_length` | maximum nucleotide length written to the alleles file per sample (default: 10,000)
+- `--print` / `-p` | if set, exports each sheet of the Excel output as individual CSV or TXT files
+- `--verbose` / `-v` | enables verbose output
 
+---
 
-## Dependencies:
+## Dependencies
+
 ### Python 3
-*non-built-in modules:*
-- Bio pandas argparse
-- Which can be installed with pip on Windows, Linux, or Mac:
-```
- python3 -m pip install Bio pandas argparse 
+
+*Non-built-in modules:*
+- `Bio`, `pandas`, `argparse`
+
+Install with pip on Windows, Linux, or Mac:
+```bash
+python3 -m pip install Bio pandas argparse
 ```
 
-### For MacOS
+### For macOS
 
-For MacOS you may need the homebrew package c-blosc and the python module tables before you can install the above required packages.
-
-```
+You may need the Homebrew package `c-blosc` and the Python module `tables` before installing the above:
+```bash
 brew install c-blosc
 python3 -m pip install tables
 ```
 
+---
+
 ## Examples
-Outputs are saved in the directory the command is run from. Execute the command in the terminal from the directory you wish them to be saved in. Outputs will be overwritten if given the same name as a previous output.
-### Windows Motif Length Example: 
-~~~~
-python C:\path_to\InVNTR_1.4.py -f E:\wholegenomes -s TGGAGCTCCCAGAGCAGCAGGAGGGGCACCTGAAGCACCTAGAGCAGCAGGAGGGACAGC -e TGGAGCAGCAGAAGGGGCAGCTGGAGCAGC -n IVL -l 30
-~~~~
+
+Outputs are saved in the directory the command is run from. Execute in the terminal from the directory you want outputs saved to. Outputs will be overwritten if given the same name as a previous run.
+
+### Coordinate Mode (New Default) — Unix:
+```bash
+python3 ~/path_to/InVNTR_1.5.py -f /Volumes/wholegenomes -c chr1:30908354-30908706 -l 30 -n IVL
+```
 <details>
 <summary>More detailed explanation</summary>
-This example extracts the IVL VNTR. The IVL VNTR is ideal for the motif length option because it has a consistent motif length of 30. In this example the start is the first two motifs, as together they are consistent accross alleles, but the sequence in unique in the genome. The end is the last motif.  
-
-</details> 
+This uses coordinate mode to extract the IVL VNTR from GRCh38 coordinates. InVNTR automatically derives flanking sequences from the reference, so no --start or --end is needed. The motif length of 30 is still required to decompose the repeat.
+</details>
 <br />
 
-### Windows Delimiter Example: 
-~~~~
-python C:\path_to\InVNTR_1.4.py -f E:\wholegenomes -s CATCTCCTCCTCCTCACCTCCTGCTGTGGTGCACAGATACCTATAGGCAGGCTC -e CATCTCCTCCTCCCGAGCTCCTCCCCTAGTGCACAGATACCTATAGGCAGGCTC -n SORL1 -d CATCT
-~~~~
+### Coordinate Mode — Windows:
+```
+python C:\path_to\InVNTR_1.5.py -f E:\wholegenomes -c chr1:30908354-30908706 -l 30 -n IVL
+```
+<br />
+
+### Manual Start/End Mode — Windows Motif Length Example:
+```
+python C:\path_to\InVNTR_1.5.py -f E:\wholegenomes -s TGGAGCTCCCAGAGCAGCAGGAGGGGCACCTGAAGCACCTAGAGCAGCAGGAGGGACAGC -e TGGAGCAGCAGAAGGGGCAGCTGGAGCAGC -n IVL -l 30
+```
 <details>
 <summary>More detailed explanation</summary>
-This example extracts the SORL1 VNTR. The SORL1 VNTR is ideal for the delimiter option because it has a consistent sequence at the start of each motif, despite variable length.
-
-</details> 
+This example extracts the IVL VNTR using manually provided start and end sequences. The IVL VNTR is ideal for the motif length option because it has a consistent motif length of 30. The start is the first two motifs, which together are consistent across alleles and unique in the genome. The end is the last motif.
+</details>
 <br />
 
-### Unix (Mac/Linux) Example: 
-~~~~
-python ~/path_to/InVNTR_1.4.py -f /Volumes/wholegenomes -l 30 -s TGGAGCTCCCAGAGCAGCAGGAGGGGCACCTGAAGCACCTAGAGCAGCAGGAGGGACAGC -e TGGAGCAGCAGAAGGGGCAGCTGGAGCAGC -n IVL
-~~~~
-## Outputs:
-- VNTR.csv – excel file with alleles on the x axis, with each allele named after the file and the tandem repeat cut into motifs based on the length or delimiter provided from the beginning of the allele.
-<br />
-- VNTR_allele_length.csv – excel file with alleles on the y axis, with each allele named after the file length of the VNTR for each allele.
-<br />
-- VNTR_alleles.txt – text file with each allele after the name of the file.
-<br />
-- VNTR_errors.txt – text file with any errors (ie. '[filename] has only reverse end’ or ‘[filename] has no sign of tandem repeat in forward, reverse’).
-<br />
-- VNTR_frequency.csv – csv with motifs sorted by frequency accross the entire population. 
+### Manual Start/End Mode — Windows Delimiter Example:
+```
+python C:\path_to\InVNTR_1.5.py -f E:\wholegenomes -s CATCTCCTCCTCCTCACCTCCTGCTGTGGTGCACAGATACCTATAGGCAGGCTC -e CATCTCCTCCTCCCGAGCTCCTCCCCTAGTGCACAGATACCTATAGGCAGGCTC -n SORL1 -d CATCT
+```
+<details>
+<summary>More detailed explanation</summary>
+This example extracts the SORL1 VNTR using a delimiter. The SORL1 VNTR is ideal for the delimiter option because it has a consistent sequence at the start of each motif, despite variable motif length.
+</details>
 <br />
 
-## Current help flag output:
+### Manual Start/End Mode — Unix (Mac/Linux) Example:
+```bash
+python3 ~/path_to/InVNTR_1.5.py -f /Volumes/wholegenomes -l 30 -s TGGAGCTCCCAGAGCAGCAGGAGGGGCACCTGAAGCACCTAGAGCAGCAGGAGGGACAGC -e TGGAGCAGCAGAAGGGGCAGCTGGAGCAGC -n IVL
+```
 
-usage: InVNTR_1.4.py [-h] -f  [-l ] [-d ] -s  [-e ] [-ne ] [-mal ] [-b ] [-a ] [-t ] [-n ]
+---
+
+## Outputs
+
+The primary output is a single `.xlsx` Excel workbook (default: `VNTR.xlsx`). If a file with that name already exists, a counter is appended (e.g. `VNTR_1.xlsx`). It contains the following sheets:
+
+**SeattlePlot** — The main data matrix. Columns are individual genome assemblies (named after their source file), rows are motif positions (1, 2, 3...). Each cell contains the sequence of that motif at that position in that assembly. The first four rows below the header contain per-sample metadata: Allele Length, Population code, Superpopulation code, and File Origin.
+
+**Allele_Length** — One row per assembly with columns: Filename, Allele Length (bp), Population code, Superpopulation code, and File Origin.
+
+**Frequency** — One row per unique motif sequence observed across all samples and positions, with columns: Motif, Frequency (count), and Length (bp). Useful for identifying dominant vs. rare motif variants.
+
+**Alleles** — FASTA-formatted records of each assembly's full extracted VNTR sequence (truncated to `--max_allele_length` if needed), stored as alternating `>filename` / sequence rows.
+
+**Population** — Statistical summary of allele length variation. Contains mean and standard deviation grouped by Population code, then by Superpopulation code. Also includes a one-way ANOVA testing whether allele lengths differ significantly between groups, followed by a Tukey HSD post-hoc test identifying which specific population pairs differ. Results are reported for both population-level and superpopulation-level groupings.
+
+**Errors** — Two columns (Sample, Error) listing any assemblies that failed to extract, with the reason (e.g. missing flanking sequences, partial matches, file read errors).
+
+**Log** — Timestamped record of every processing step, the full command used to invoke the script, total elapsed time, number of genomes processed, and average time per genome.
+
+---
+
+If `--print` / `-p` is set, each sheet is additionally exported as a separate file alongside the `.xlsx`: SeattlePlot, Allele_Length, Frequency, and Population as `.csv`; Alleles, Errors, and Log as `.txt`. All files are prefixed with the `--name` argument.
+
+## Current Help Flag Output
+
+```
+usage: InVNTR_1.5.py [-h] -f FOLDER [-l [LENGTH]] [-d [DELIMITER]] [-s START] [-e END] [-ne [NO_END]]
+                     [-mal [MAX_ALLELE_LENGTH]] [-t [TYPE]] [-n [NAME]] [-c COORDINATE] [-r REFERENCE]
+                     [-p] [--flank FLANK] [-v]
 
 Extract VNTR
 
 options:
-  -h, --help            show this help message and exit <br />
-  -f , --folder         Path to folder. ex: E:\HPRC <br />
-  -l [], --length []    length of consensus motif. ex: 30 : DO NOT USE IF USING DELIMITER, LENGTH TAKES PRIORITY <br />
-  -d [], --delimiter []
-                        consistent beginning of motif: DO NOT USE IF USING LENGTH, LENGTH TAKES PRIORITY <br />
-  -s , --start          beginning of VNTR. ex: GCTA <br />
-  -e [], --end []       end of VNTR. ex: GCTA <br />
-  -ne [], --no_end []   If there is no end, when should the program cut out? default is 10000 <br />
-  -mal [], --max_allele_length []
-                        Maximum nucleotide length that will be written to the allele file output, per file. Default is 10000 <br />
-  -b [], --before []    Is the start value of the VNTR before the VNTR? y OR n <br />
-  -a [], --after []     Is the end value of the VNTR after the VNTR? y OR n <br />
-  -t [], --type []      Filetype ex: .fasta (default is .fa or fasta) <br />
-  -n [], --name []      output name) <br />
+  -h, --help                        show this help message and exit
+  -f FOLDER, --folder FOLDER        Path to folder
+  -l [LENGTH], --length [LENGTH]    Length of consensus motif. Takes priority over delimiter.
+  -d [DELIMITER], --delimiter [DELIMITER]
+                                    Delimiter marking start of motifs. Ignored if length is used.
+  -s START, --start START           Beginning of VNTR
+  -e END, --end END                 End of VNTR
+  -ne [NO_END], --no_end [NO_END]   If there is no end, cut after N bp.
+  -mal [MAX_ALLELE_LENGTH], --max_allele_length [MAX_ALLELE_LENGTH]
+                                    Maximum allele length per file.
+  -t [TYPE], --type [TYPE]          Filetype (default .fa or .fasta)
+  -n [NAME], --name [NAME]          Output prefix name
+  -c COORDINATE, --coordinate COORDINATE
+                                    Reference coordinates in genomic interval format, e.g. 'chr1:30908354-30908706'
+  -r REFERENCE, --reference REFERENCE
+                                    Reference genome (default GRCh38)
+  -p, --print                       If set, export each sheet of the Excel output to CSV or TXT files.
+  --flank FLANK                     Number of bp for flanking sequences (default 50)
+  -v, --verbose                     Verbose output
+```
 
-## Future Direction:
-Improving on motif decomposition remains the top priority. Refactoring is on the horizon as well.
+---
+
+## Future Direction
+
+Combining .vcf files and adding a y chromosome .vcf are the current top priority. Adding Alu and other RE detection and avoidance are also a priority. As well as continuing to think about repeat motif decomposition. The SeattlePlot function is currently underutilized due to his rigidity.

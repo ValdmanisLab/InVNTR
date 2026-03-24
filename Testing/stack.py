@@ -5,9 +5,9 @@ import re
 
 
 
-df= pd.read_csv("C:\Eli\VNTR\MUC\MUC8\MUC8_donecsv.csv")
+df= pd.read_csv(r"C:\Eli\VNTR\muc2exon\69\MUC2_69_done.csv")
 
-outputname = "MUC8_done"
+outputname = "MUC2_69_done_frequency"
 
 #stack all of the columns
 dftall = df.stack()
