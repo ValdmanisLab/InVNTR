@@ -58,7 +58,7 @@ Make sure the following are installed before running the setup script:
 - `pip install requests`
 - `samtools`
 - `pigz`
-- `aws cli` (only required if any files are hosted on S3)
+- `aws cli`
 
 ---
 
@@ -176,37 +176,6 @@ The primary output is a single `.xlsx` Excel workbook (default: `VNTR.xlsx`). If
 ---
 
 If `--print` / `-p` is set, each sheet is additionally exported as a separate file alongside the `.xlsx`: SeattlePlot, Allele_Length, Frequency, and Population as `.csv`; Alleles, Errors, and Log as `.txt`. All files are prefixed with the `--name` argument.
-
-## Current Help Flag Output
-
-```
-usage: InVNTR_1.5.py [-h] -f FOLDER [-l [LENGTH]] [-d [DELIMITER]] [-s START] [-e END] [-ne [NO_END]]
-                     [-mal [MAX_ALLELE_LENGTH]] [-t [TYPE]] [-n [NAME]] [-c COORDINATE] [-r REFERENCE]
-                     [-p] [--flank FLANK] [-v]
-
-Extract VNTR
-
-options:
-  -h, --help                        show this help message and exit
-  -f FOLDER, --folder FOLDER        Path to folder
-  -l [LENGTH], --length [LENGTH]    Length of consensus motif. Takes priority over delimiter.
-  -d [DELIMITER], --delimiter [DELIMITER]
-                                    Delimiter marking start of motifs. Ignored if length is used.
-  -s START, --start START           Beginning of VNTR
-  -e END, --end END                 End of VNTR
-  -ne [NO_END], --no_end [NO_END]   If there is no end, cut after N bp.
-  -mal [MAX_ALLELE_LENGTH], --max_allele_length [MAX_ALLELE_LENGTH]
-                                    Maximum allele length per file.
-  -t [TYPE], --type [TYPE]          Filetype (default .fa or .fasta)
-  -n [NAME], --name [NAME]          Output prefix name
-  -c COORDINATE, --coordinate COORDINATE
-                                    Reference coordinates in genomic interval format, e.g. 'chr1:30908354-30908706'
-  -r REFERENCE, --reference REFERENCE
-                                    Reference genome (default GRCh38)
-  -p, --print                       If set, export each sheet of the Excel output to CSV or TXT files.
-  --flank FLANK                     Number of bp for flanking sequences (default 50)
-  -v, --verbose                     Verbose output
-```
 
 ---
 
