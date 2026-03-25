@@ -5,15 +5,28 @@ import subprocess
 import requests
 import shutil
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # --- Configuration ---
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com/ValdmanisLab/InVNTR/main/Stable/setup"
 CSV_REGULAR     = "assemblies.csv"
 CSV_TESTING     = "assemblies_testing.csv"
 
-# 1000 Genomes config
+# 1000 Genomes — single sites-only VCF (2 files: VCF + index)
 KG_SITES_VCF = "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/release/20190312_biallelic_SNV_and_INDEL/ALL.wgs.shapeit2_integrated_snvindels_v2a.GRCh38.27022019.sites.vcf.gz"
 KG_SITES_TBI = KG_SITES_VCF + ".tbi"
+
+# Max parallel downloads
+MAX_WORKERS = 4
+MAX_RETRIES = 3
+
+print_lock = threading.Lock()
+
+def tprint(*args, **kwargs):
+    """Thread-safe print."""
+    with print_lock:
+        print(*args, **kwargs)
 
 # --- Argument parsing ---
 def parse_args():
@@ -73,15 +86,41 @@ def http_file_size(url):
     return None
 
 def download_file(url, dest):
-    print(f"⬇️  Downloading {url} ...")
+    tprint(f"⬇️  Downloading {url} ...")
     if url.startswith("s3://"):
         subprocess.run(["aws", "s3", "cp", url, dest], check=False)
     else:
-        r = requests.get(url, stream=True)
-        with open(dest, "wb") as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                r = requests.get(url, stream=True, timeout=60)
+                with open(dest, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+                return  # success
+            except (requests.exceptions.ChunkedEncodingError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout) as e:
+                if attempt < MAX_RETRIES:
+                    tprint(f"    ⚠️  Attempt {attempt}/{MAX_RETRIES} failed for {os.path.basename(dest)}: {e}. Retrying...")
+                else:
+                    tprint(f"    ❌ All {MAX_RETRIES} attempts failed for {os.path.basename(dest)}")
+                    raise
+
+def download_and_verify(filename, url):
+    """Download a single file and verify its size. Returns (filename, success, message)."""
+    if not url:
+        return filename, False, f"⚠️  No online location for {filename}"
+    try:
+        download_file(url, filename)
+    except Exception as e:
+        return filename, False, f"❌ Download failed for {filename}: {e}"
+    local_size = file_size(filename)
+    remote_size = s3_file_size(url) if url.startswith("s3://") else http_file_size(url)
+    if remote_size and local_size == remote_size:
+        return filename, True, f"✅ Verified {filename} (size match)"
+    else:
+        return filename, False, f"⚠️  Size mismatch for {filename} (local {local_size}, remote {remote_size})"
 
 def generate_fai(fasta_path):
     """Generate .fai index using samtools faidx."""
@@ -104,24 +143,45 @@ def unzip_with_pigz(gz_path):
     if not os.path.exists(gz_path):
         return None
     unzipped_name = gz_path[:-3]
-    print(f"    🔓 Unzipping {gz_path} with pigz...")
-    subprocess.run(["pigz", "-d", "-f", gz_path], check=True)
+    # Prefer pigz (faster, parallel), fall back to gzip
+    if shutil.which("pigz"):
+        tool = ["pigz", "-d", "-f"]
+        tool_name = "pigz"
+    elif shutil.which("gzip"):
+        tool = ["gzip", "-d", "-f"]
+        tool_name = "gzip"
+    else:
+        raise RuntimeError("Neither pigz nor gzip found — please install one (e.g. sudo apt install pigz)")
+    print(f"    🔓 Unzipping {gz_path} with {tool_name}...")
+    subprocess.run(tool + [gz_path], check=True)
     return unzipped_name
 
 # --- 1000 Genomes download ---
 def download_1000g_vcfs():
     print("\n🧬 Downloading 1000 Genomes GRCh38 sites-only VCF...")
+
+    vcf_jobs = []
     for url in [KG_SITES_VCF, KG_SITES_TBI]:
         filename = url.split("/")[-1]
         if os.path.exists(filename):
-            print(f"    ⚠️  {filename} already exists, verifying size...")
-        download_file(url, filename)
-        local_size = file_size(filename)
-        remote_size = http_file_size(url)
-        if remote_size and local_size == remote_size:
-            print(f"    ✅ Verified {filename} (size match)")
+            print(f"    ✅ {filename} already present, skipping.")
         else:
-            print(f"    ⚠️  Size mismatch for {filename} (local {local_size}, remote {remote_size})")
+            vcf_jobs.append((filename, url))
+
+    if not vcf_jobs:
+        print("✅ All VCF files already present.")
+        return
+
+    print(f"⬇️  Downloading {len(vcf_jobs)} VCF file(s)...\n")
+
+    completed = 0
+    with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(vcf_jobs))) as executor:
+        futures = {executor.submit(download_and_verify, filename, url): filename
+                   for filename, url in vcf_jobs}
+        for future in as_completed(futures):
+            filename, success, msg = future.result()
+            completed += 1
+            tprint(f"  [{completed}/{len(vcf_jobs)}] {msg}")
 
 # --- Main logic for assemblies ---
 def process_assemblies(csv_file):
@@ -146,21 +206,42 @@ def process_assemblies(csv_file):
             print(f"❌ Missing {old}")
             missing.append((old, url))
 
+    # Count VCF files that will be downloaded later, for the grand total
+    vcf_needed = sum(
+        1 for url in [KG_SITES_VCF, KG_SITES_TBI]
+        if not os.path.exists(url.split("/")[-1])
+    )
+
+    total_to_download = len(missing) + vcf_needed
+    print(f"\n📊 Download summary:")
+    print(f"   Assembly files missing : {len(missing)}")
+    print(f"   VCF files missing      : {vcf_needed}")
+    print(f"   Total files to download: {total_to_download}\n")
+
     if not missing:
-        print("✅ All files present.\n")
+        print("✅ All assembly files present.\n")
     else:
-        print(f"⚠️ {len(missing)} missing file(s). Downloading...\n")
-        for old, url in missing:
-            if not url:
-                print(f"⚠️ No online location for {old}")
-                continue
-            download_file(url, old)
-            local_size = file_size(old)
-            remote_size = s3_file_size(url) if url.startswith("s3://") else http_file_size(url)
-            if remote_size and local_size == remote_size:
-                print(f"✅ Verified {old} (size match)")
-            else:
-                print(f"⚠️ Size mismatch for {old} (local {local_size}, remote {remote_size})")
+        s3_jobs   = [(old, url) for old, url in missing if url.startswith("s3://")]
+        http_jobs = [(old, url) for old, url in missing if not url.startswith("s3://") and url]
+        no_url    = [(old, url) for old, url in missing if not url]
+
+        for old, _ in no_url:
+            print(f"⚠️  No online location for {old}")
+
+        print(f"⬇️  Downloading {len(s3_jobs)} S3 files and {len(http_jobs)} HTTP files "
+              f"({MAX_WORKERS} at a time)...\n")
+
+        completed = 0
+        total_assembly = len(s3_jobs) + len(http_jobs)
+        all_jobs = [(old, url) for old, url in missing if url]
+
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            futures = {executor.submit(download_and_verify, old, url): old
+                       for old, url in all_jobs}
+            for future in as_completed(futures):
+                old, success, msg = future.result()
+                completed += 1
+                tprint(f"  [{completed}/{total_assembly}] {msg}")
 
     # Step 2: Rename uncompressed FASTA files
     print("\n🔄 Renaming uncompressed .fasta files...")
@@ -175,8 +256,8 @@ def process_assemblies(csv_file):
             renamed += 1
     print(f"✅ Renamed {renamed} file(s).")
 
-    # Step 3: Unzip .gz files with pigz and rename
-    print("\n🗜️  Unzipping and renaming .gz files with pigz...")
+    # Step 3: Unzip .gz files and rename
+    print("\n🗜️  Unzipping and renaming .gz files...")
     for row in rows:
         old = row.get("Old_Filename", "").strip()
         new = row.get("Filename", "").strip()
