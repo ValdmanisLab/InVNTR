@@ -722,15 +722,21 @@ def main():
         log(f"Using reference genome: {ref_name} ({fasta_file})", step_counter)
         step_counter += 1
     
-    # Load assemblies.csv (comma-separated)
+    # Load assemblies.csv (comma-separated), fall back to assemblies_testing.csv
     assemblies_path = os.path.join(args.folder, "assemblies.csv")
-    if not os.path.exists(assemblies_path):
-        raise FileNotFoundError(f"assemblies.csv not found in {args.folder}")
+    testing_path = os.path.join(args.folder, "assemblies_testing.csv")
+    if os.path.exists(assemblies_path):
+        log(f"Using assemblies manifest: assemblies.csv")
+    elif os.path.exists(testing_path):
+        assemblies_path = testing_path
+        log(f"assemblies.csv not found — falling back to assemblies_testing.csv")
+    else:
+        raise FileNotFoundError(f"Neither assemblies.csv nor assemblies_testing.csv found in {args.folder}")
     
     assemblies_df = pd.read_csv(assemblies_path, sep=",", dtype=str).fillna("")
     
     if "Filename" not in assemblies_df.columns:
-        raise RuntimeError("assemblies.csv must contain a 'Filename' column")
+        raise RuntimeError(f"{os.path.basename(assemblies_path)} must contain a 'Filename' column")
     
     assemblies_meta = {row["Filename"]: row.to_dict() for _, row in assemblies_df.iterrows()}
     log(f"Loaded metadata for {len(assemblies_meta)} assemblies.", step_counter)
@@ -759,24 +765,14 @@ def main():
 
         # --- Variant lookup ---
         vcf_path = None
-        chrom_prefix = chr_name if chr_name.startswith("chr") else f"chr{chr_name}"
-        vcf_filename = f"ALL.{chrom_prefix}.shapeit2_integrated_snvindels_v2a_27022019.GRCh38.phased.vcf.gz"
-        vcf_path_candidate = os.path.join(args.folder, vcf_filename)
+        vcf_path_candidate = os.path.join(args.folder, "ALL.wgs.shapeit2_integrated_snvindels_v2a.GRCh38.27022019.sites.vcf.gz")
         if os.path.exists(vcf_path_candidate):
             vcf_path = vcf_path_candidate
-        else:
-            alt_prefix = chr_name[3:] if chr_name.startswith("chr") else chr_name
-            vcf_filename = f"ALL.{alt_prefix}.shapeit2_integrated_snvindels_v2a_27022019.GRCh38.phased.vcf.gz"
-            vcf_path_candidate = os.path.join(args.folder, vcf_filename)
-            if os.path.exists(vcf_path_candidate):
-                vcf_path = vcf_path_candidate
-
         if vcf_path:
             try:
                 vcf = pysam.VariantFile(vcf_path)
                 contigs = list(vcf.header.contigs.keys())
                 vcf.close()
-
                 # Determine correct contig name for VCF queries
                 if chr_name in contigs:
                     vcf_chr = chr_name
@@ -786,7 +782,6 @@ def main():
                     vcf_chr = f"chr{chr_name}"
                 else:
                     vcf_chr = chr_name
-
                 # Variant lookup
                 five_prime_flank_variants = check_variants_in_region(
                     vcf_path,

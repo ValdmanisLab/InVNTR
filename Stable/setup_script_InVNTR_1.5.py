@@ -12,8 +12,8 @@ CSV_REGULAR     = "assemblies.csv"
 CSV_TESTING     = "assemblies_testing.csv"
 
 # 1000 Genomes config
-KG_BASE_URL = "https://hgdownload.soe.ucsc.edu/gbdb/hg38/1000Genomes"
-KG_CHRS = [str(i) for i in range(1, 23)] + ["X"]
+KG_SITES_VCF = "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/release/20190312_biallelic_SNV_and_INDEL/ALL.wgs.shapeit2_integrated_snvindels_v2a.GRCh38.27022019.sites.vcf.gz"
+KG_SITES_TBI = KG_SITES_VCF + ".tbi"
 
 # --- Argument parsing ---
 def parse_args():
@@ -110,21 +110,18 @@ def unzip_with_pigz(gz_path):
 
 # --- 1000 Genomes download ---
 def download_1000g_vcfs():
-    print("\n🧬 Downloading 1000 Genomes GRCh38 phased VCFs...")
-    for chr_ in KG_CHRS:
-        for suffix in ["vcf.gz", "vcf.gz.tbi"]:
-            filename = f"ALL.chr{chr_}.shapeit2_integrated_snvindels_v2a_27022019.GRCh38.phased.{suffix}"
-            url = f"{KG_BASE_URL}/{filename}"
-            dest = filename  # current directory
-            if os.path.exists(dest):
-                print(f"    ⚠️ {dest} exists, verifying size...")
-            download_file(url, dest)
-            local_size = file_size(dest)
-            remote_size = http_file_size(url)
-            if remote_size and local_size == remote_size:
-                print(f"    ✅ Verified {filename} (size match)")
-            else:
-                print(f"    ⚠️ Size mismatch for {filename} (local {local_size}, remote {remote_size})")
+    print("\n🧬 Downloading 1000 Genomes GRCh38 sites-only VCF...")
+    for url in [KG_SITES_VCF, KG_SITES_TBI]:
+        filename = url.split("/")[-1]
+        if os.path.exists(filename):
+            print(f"    ⚠️  {filename} already exists, verifying size...")
+        download_file(url, filename)
+        local_size = file_size(filename)
+        remote_size = http_file_size(url)
+        if remote_size and local_size == remote_size:
+            print(f"    ✅ Verified {filename} (size match)")
+        else:
+            print(f"    ⚠️  Size mismatch for {filename} (local {local_size}, remote {remote_size})")
 
 # --- Main logic for assemblies ---
 def process_assemblies(csv_file):
