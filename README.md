@@ -6,7 +6,7 @@ InVNTR allows the rapid extraction of tandem repeats from consensus sequences, l
 
 ---
 
-## What's New in Version 1.5 - README STILL UPDATING 3.25.26
+## What's New in Version 1.5 
 
 - **Coordinate mode (now default):** You can now specify a VNTR locus using genomic coordinates in interval format (e.g. `chr12:40,479,053-40,491,305` for the VNTR exon of MUC19) instead of manually providing `--start` and `--end` sequences. InVNTR will automatically extract flanking sequences from a reference genome. GRCh38 is the default reference, though T2T coordinates should also work. InVNTR relies on .vcf files to generate wildcards in flanking regions for snp's in the autosome and X chromosome. InVNTR is currently lacking a y chromosome .vcf, so y chromosome coordinates are not currently usable.
 - **`--start` and `--end` are now optional** when using coordinate mode. They remain available if you prefer to provide sequences manually.
