@@ -48,7 +48,7 @@ The setup script will:
 2. Check for missing files and download them from their listed locations (S3 or HTTP)
 3. Decompress and rename files as needed
 4. Generate `.fai` index files for reference sequences using `samtools faidx`
-5. Download 1000 Genomes Project phased VCFs (chromosomes 1–22 + X) from UCSC
+5. Download a 1000 Genomes Project phased VCF
 
 ### Setup Dependencies
 
