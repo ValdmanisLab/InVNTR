@@ -855,7 +855,7 @@ def main():
     completed = 0
     
     # --- Parallel processing ---
-    with ProcessPoolExecutor(max_workers=8) as executor:
+    with ProcessPoolExecutor(max_workers=4) as executor:
         futures = {}
         for f in files:
             futures[executor.submit(
