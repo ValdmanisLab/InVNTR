@@ -17,7 +17,7 @@ InVNTR allows the rapid extraction of tandem repeats from consensus sequences, l
 
 ## Setup
 
-Before running InVNTR 1.5, you need to download the required reference assemblies. A setup script is provided to automate this. You must already have mamba or conda installed and active on your terminal application, as well as wget.
+Before running InVNTR 1.5, you need to download the required reference assemblies. A setup script is provided to automate this, as well as configure an environment for running InVNTR. You must already have mamba or conda installed and active on your terminal application, as well as wget.
 
 ### 1. Download the setup script
 
@@ -29,14 +29,16 @@ wget https://raw.githubusercontent.com/ValdmanisLab/InVNTR/main/Stable/setup_InV
 
 Run from the directory where you want the assemblies to be downloaded:
 
+Full dataset - 4.25 terabytes, expect setup to take no less than 3 days.
 ```bash
 # Download full assembly manifest and all files
-./setup_InVNTR_1.5.sh #This requires approximately 4.5TB of space and should be expected to take no less than 3 days.
+./setup_InVNTR_1.5.sh
+```
 
-# Download the smaller testing manifest instead (fewer samples, faster to get started)
-./setup_InVNTR_1.5.sh -t #This requires approximately 100GB of space and should be expected to take no less than 1 hour.
-
-# or
+Testing dataset - ~100GB terabytes, expect setup to take no less than 1 hour.
+```bash
+./setup_InVNTR_1.5.sh -t
+# OR
 ./setup_InVNTR_1.5.sh -testing
 ```
 
