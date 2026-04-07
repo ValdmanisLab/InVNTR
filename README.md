@@ -2,7 +2,7 @@
 Isolate and Neaten VNTRs (InVNTR): A command-line tool for VNTR analysis and visualization.
 
 ### Details:
-InVNTR allows the rapid extraction of tandem repeats from consensus sequences, like genomic FASTA. We use it with high quality long read assemblies, such as those available from the HPRC, HGSVC, and the 1000 Genomes Project. Rather than a reference genome, we use something like in-silico PCR in order to isolate the loci of interest. For this reason, VNTRs need to have conserved and unique flanking sequence. InVNTR assumes all user arguments have the same strandedness, but will search for reverse complements in FASTA if it cannot find sequences that match the arguments.
+InVNTR allows the rapid extraction of tandem repeats from consensus sequences, like genomic FASTA. We use it with high quality long read assemblies, such as those available from the HPRC, HGSVC, and the 1000 Genomes Project. Rather than a reference genome, we use something like in-silico PCR in order to isolate the loci of interest. For this reason, VNTRs need to have conserved and unique flanking sequence. 
 
 ---
 
