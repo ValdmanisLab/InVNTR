@@ -17,15 +17,13 @@ InVNTR allows the rapid extraction of tandem repeats from consensus sequences, l
 
 ## Setup
 
-Before running InVNTR 1.5, you need to download the required reference assemblies. A setup script is provided to automate this.
+Before running InVNTR 1.5, you need to download the required reference assemblies. A setup script is provided to automate this. You must already have mamba or conda installed and active on your terminal application, as well as wget.
 
 ### 1. Download the setup script
 
 ```
-wget https://raw.githubusercontent.com/ValdmanisLab/InVNTR/main/Stable/setup_script_InVNTR_1.5.py
+wget https://raw.githubusercontent.com/ValdmanisLab/InVNTR/main/Stable/setup_InVNTR_1.5.sh
 ```
-
-Or clone the repository and find it at `Stable/setup/setup_script_InVNTR_1.5.py`.
 
 ### 2. Run the setup script
 
@@ -33,32 +31,23 @@ Run from the directory where you want the assemblies to be downloaded:
 
 ```bash
 # Download full assembly manifest and all files
-python3 setup_script_InVNTR_1.5.py
+./setup_InVNTR_1.5.sh #This requires approximately 4.5TB of space and should be expected to take no less than 3 days.
 
 # Download the smaller testing manifest instead (fewer samples, faster to get started)
-python3 setup_script_InVNTR_1.5.py -t
+./setup_InVNTR_1.5.sh -t #This requires approximately 100GB of space and should be expected to take no less than 1 hour.
+
 # or
-python3 setup_script_InVNTR_1.5.py --testing
+./setup_InVNTR_1.5.sh -testing
 ```
 
 The `-t` / `--testing` flag uses `assemblies_testing.csv`, which contains a reduced set of samples — useful for testing your setup before committing to the full download.
 
 The setup script will:
 1. Download the appropriate assembly manifest CSV from the InVNTR GitHub repo
-2. Check for missing files and download them from their listed locations (S3 or HTTP)
-3. Decompress and rename files as needed
-4. Generate `.fai` index files for reference sequences using `samtools faidx`
-5. Download a 1000 Genomes Project phased VCF
-
-### Setup Dependencies
-
-Make sure the following are installed before running the setup script:
-
-- `python3`
-- `pip install requests`
-- `samtools`
-- `pigz`
-- `aws cli`
+2. Setup an 'invntr' conda environment with all of the dependencies
+3. Check for missing files and download our a .agc from our sharepoint and extract them.
+5. Generate `.fai` index files for reference sequences using `samtools faidx`
+6. Download a 1000 Genomes Project phased VCF and it's index.
 
 ---
 
@@ -86,31 +75,9 @@ Make sure the following are installed before running the setup script:
 
 ---
 
-## Dependencies
-
-### Python 3
-
-*Non-built-in modules:*
-- `Bio`, `pandas`, `argparse`
-
-Install with pip on Windows, Linux, or Mac:
-```bash
-python3 -m pip install Bio pandas argparse
-```
-
-### For macOS
-
-You may need the Homebrew package `c-blosc` and the Python module `tables` before installing the above:
-```bash
-brew install c-blosc
-python3 -m pip install tables
-```
-
----
-
 ## Examples
 
-Outputs are saved in the directory the command is run from. Execute in the terminal from the directory you want outputs saved to. Outputs will be overwritten if given the same name as a previous run.
+Outputs are saved in the directory the command is run from. Execute in the terminal from the directory you want outputs saved to. InVNTR will append a _# rather than overwrite a previous output.
 
 ### Coordinate Mode (New Default) — Unix:
 ```bash
