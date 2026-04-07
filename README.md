@@ -45,10 +45,10 @@ Testing dataset - ~100GB terabytes, expect setup to take no less than 1 hour.
 The `-t` / `--testing` flag uses `assemblies_testing.csv`, which contains a reduced set of samples — useful for testing your setup before committing to the full download.
 
 The setup script will:
-1. Download the appropriate assembly manifest CSV from the InVNTR GitHub repo
-2. Setup an 'invntr' conda environment with all of the dependencies
-3. Check for missing files and download our a .agc from our sharepoint and extract them.
-5. Generate `.fai` index files for reference sequences using `samtools faidx`
+1. Download the appropriate assembly manifest CSV from the InVNTR GitHub repo.
+2. Setup an 'invntr' conda environment with all of the dependencies for decompressing the assemblies and running invntr.
+3. Check for missing files and download our .agc from our sharepoint and extract them.
+5. Generate `.fai` index files for reference sequences using `samtools faidx`.
 6. Download a 1000 Genomes Project phased VCF and it's index.
 
 ---
