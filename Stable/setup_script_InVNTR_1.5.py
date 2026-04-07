@@ -1,305 +1,284 @@
-#!/usr/bin/env python3
-import csv
-import os
-import subprocess
-import requests
-import shutil
-import argparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
+#!/usr/bin/env bash
+set -euo pipefail
 
 # --- Configuration ---
-GITHUB_RAW_BASE = "https://raw.githubusercontent.com/ValdmanisLab/InVNTR/main/Stable/setup"
-CSV_REGULAR     = "assemblies.csv"
-CSV_TESTING     = "assemblies_testing.csv"
+GITHUB_REPO="ValdmanisLab/InVNTR"
+GITHUB_RAW_BASE="https://raw.githubusercontent.com/ValdmanisLab/InVNTR/main/Stable/setup"
+CSV_REGULAR="assemblies.csv"
+CSV_TESTING="assemblies_testing.csv"
 
-# 1000 Genomes — single sites-only VCF (2 files: VCF + index)
-KG_SITES_VCF = "https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/release/20190312_biallelic_SNV_and_INDEL/ALL.wgs.shapeit2_integrated_snvindels_v2a.GRCh38.27022019.sites.vcf.gz"
-KG_SITES_TBI = KG_SITES_VCF + ".tbi"
+AGC_FULL_URL="https://uwnetid.sharepoint.com/:u:/s/valdmanislabcollab/IQC0v8k0UAcHTIoAp1nyefjzAfQuh_ILvfv5cs-fGuCNA8c?e=Ma0EQo&download=1"
+AGC_TESTING_URL="https://uwnetid.sharepoint.com/:u:/s/valdmanislabcollab/IQCpBMmpRvviR6sMnaoUu94OAcQi-DdMtRcXWL9HRH-Nyx8?e=c9gKWl&download=1"
+AGC_FULL_NAME="1546.agc"
+AGC_TESTING_NAME="1546_testing.agc"
 
-# Max parallel downloads
-MAX_WORKERS = 4
-MAX_RETRIES = 3
+KG_SITES_VCF="https://ftp.1000genomes.ebi.ac.uk/vol1/ftp/data_collections/1000_genomes_project/release/20190312_biallelic_SNV_and_INDEL/ALL.wgs.shapeit2_integrated_snvindels_v2a.GRCh38.27022019.sites.vcf.gz"
+KG_SITES_TBI="${KG_SITES_VCF}.tbi"
 
-print_lock = threading.Lock()
-
-def tprint(*args, **kwargs):
-    """Thread-safe print."""
-    with print_lock:
-        print(*args, **kwargs)
+CONDA_ENV_NAME="invntr"
+LR_DIR="LR"
+TESTING=false
 
 # --- Argument parsing ---
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Download and prepare genomic reference data for InVNTR."
-    )
-    parser.add_argument(
-        "-t", "--testing",
-        action="store_true",
-        help="Use the smaller testing manifest (assemblies_testing.csv) instead of the full one."
-    )
-    return parser.parse_args()
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -t|--testing)
+            TESTING=true
+            shift
+            ;;
+        *)
+            echo "Unknown argument: $1"
+            echo "Usage: bash setup.sh [-t|--testing]"
+            exit 1
+            ;;
+    esac
+done
 
-# --- CSV download ---
-def download_csv(testing=False):
-    csv_name = CSV_TESTING if testing else CSV_REGULAR
-    url = f"{GITHUB_RAW_BASE}/{csv_name}"
-    print(f"📥 Downloading manifest: {csv_name} ...")
-    try:
-        r = requests.get(url, timeout=30)
-        r.raise_for_status()
-        with open(csv_name, "w", encoding="utf-8") as f:
-            f.write(r.text)
-        print(f"✅ Saved {csv_name} to current directory.\n")
-        return csv_name
-    except requests.RequestException as e:
-        print(f"❌ Failed to download {csv_name}: {e}")
-        raise SystemExit(1)
+if [ "$TESTING" = true ]; then
+    CSV_NAME="$CSV_TESTING"
+    AGC_NAME="$AGC_TESTING_NAME"
+    AGC_URL="$AGC_TESTING_URL"
+else
+    CSV_NAME="$CSV_REGULAR"
+    AGC_NAME="$AGC_FULL_NAME"
+    AGC_URL="$AGC_FULL_URL"
+fi
 
-# --- Utility functions ---
-def file_size(path):
-    try:
-        return os.path.getsize(path)
-    except FileNotFoundError:
-        return 0
+# --- Helpers ---
+log()  { echo "  $*"; }
+ok()   { echo "  ✅ $*"; }
+info() { echo "  ⬇️  $*"; }
+warn() { echo "  ⚠️  $*"; }
+fail() { echo "  ❌ $*"; exit 1; }
 
-def s3_file_size(url):
-    try:
-        result = subprocess.run(
-            ["aws", "s3", "ls", url],
-            capture_output=True, text=True, check=True
-        )
-        parts = result.stdout.split()
-        if len(parts) >= 3:
-            return int(parts[2])
-    except subprocess.CalledProcessError:
-        pass
-    return None
-
-def http_file_size(url):
-    try:
-        r = requests.head(url, allow_redirects=True, timeout=10)
-        if "Content-Length" in r.headers:
-            return int(r.headers["Content-Length"])
-    except Exception:
-        pass
-    return None
-
-def download_file(url, dest):
-    tprint(f"⬇️  Downloading {url} ...")
-    if url.startswith("s3://"):
-        subprocess.run(["aws", "s3", "cp", url, dest], check=False)
-    else:
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                r = requests.get(url, stream=True, timeout=60)
-                with open(dest, "wb") as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-                return  # success
-            except (requests.exceptions.ChunkedEncodingError,
-                    requests.exceptions.ConnectionError,
-                    requests.exceptions.Timeout) as e:
-                if attempt < MAX_RETRIES:
-                    tprint(f"    ⚠️  Attempt {attempt}/{MAX_RETRIES} failed for {os.path.basename(dest)}: {e}. Retrying...")
-                else:
-                    tprint(f"    ❌ All {MAX_RETRIES} attempts failed for {os.path.basename(dest)}")
-                    raise
-
-def download_and_verify(filename, url):
-    """Download a single file and verify its size. Returns (filename, success, message)."""
-    if not url:
-        return filename, False, f"⚠️  No online location for {filename}"
-    try:
-        download_file(url, filename)
-    except Exception as e:
-        return filename, False, f"❌ Download failed for {filename}: {e}"
-    local_size = file_size(filename)
-    remote_size = s3_file_size(url) if url.startswith("s3://") else http_file_size(url)
-    if remote_size and local_size == remote_size:
-        return filename, True, f"✅ Verified {filename} (size match)"
-    else:
-        return filename, False, f"⚠️  Size mismatch for {filename} (local {local_size}, remote {remote_size})"
-
-def generate_fai(fasta_path):
-    """Generate .fai index using samtools faidx."""
-    if not os.path.exists(fasta_path):
-        print(f"⚠️ Skipping {fasta_path} — file not found.")
-        return False
-    fai_path = fasta_path + ".fai"
-    if os.path.exists(fai_path):
-        print(f"    ✅ {fai_path} already exists.")
-        return True
-    try:
-        subprocess.run(["samtools", "faidx", fasta_path], check=True)
-        print(f"    🧬 Created index: {fai_path}")
-        return True
-    except subprocess.CalledProcessError:
-        print(f"    ⚠️ Failed to create index for {fasta_path}")
-        return False
-
-def unzip_with_pigz(gz_path):
-    if not os.path.exists(gz_path):
-        return None
-    unzipped_name = gz_path[:-3]
-    # Prefer pigz (faster, parallel), fall back to gzip
-    if shutil.which("pigz"):
-        tool = ["pigz", "-d", "-f"]
-        tool_name = "pigz"
-    elif shutil.which("gzip"):
-        tool = ["gzip", "-d", "-f"]
-        tool_name = "gzip"
-    else:
-        raise RuntimeError("Neither pigz nor gzip found — please install one (e.g. sudo apt install pigz)")
-    print(f"    🔓 Unzipping {gz_path} with {tool_name}...")
-    subprocess.run(tool + [gz_path], check=True)
-    return unzipped_name
-
-# --- 1000 Genomes download ---
-def download_1000g_vcfs():
-    print("\n🧬 Downloading 1000 Genomes GRCh38 sites-only VCF...")
-
-    vcf_jobs = []
-    for url in [KG_SITES_VCF, KG_SITES_TBI]:
-        filename = url.split("/")[-1]
-        if os.path.exists(filename):
-            print(f"    ✅ {filename} already present, skipping.")
-        else:
-            vcf_jobs.append((filename, url))
-
-    if not vcf_jobs:
-        print("✅ All VCF files already present.")
+wget_file() {
+    local url="$1"
+    local dest="$2"
+    if [ -f "$dest" ]; then
+        ok "$(basename "$dest") already present, skipping."
         return
+    fi
+    info "Downloading $(basename "$dest") ..."
+    wget -O "$dest" "$url" || fail "wget failed for $(basename "$dest")"
+    ok "Downloaded $(basename "$dest")."
+}
 
-    print(f"⬇️  Downloading {len(vcf_jobs)} VCF file(s)...\n")
+# --- Step 0: Create LR/ directory ---
+echo ""
+echo "📁 Checking LR/ directory..."
+if [ ! -d "$LR_DIR" ]; then
+    mkdir -p "$LR_DIR"
+    ok "Created $LR_DIR/"
+else
+    ok "$LR_DIR/ already exists."
+fi
 
-    completed = 0
-    with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(vcf_jobs))) as executor:
-        futures = {executor.submit(download_and_verify, filename, url): filename
-                   for filename, url in vcf_jobs}
-        for future in as_completed(futures):
-            filename, success, msg = future.result()
-            completed += 1
-            tprint(f"  [{completed}/{len(vcf_jobs)}] {msg}")
+# --- Step 1: Find mamba or conda ---
+echo ""
+echo "🐍 Looking for mamba or conda..."
+if command -v mamba &> /dev/null; then
+    CONDA_TOOL="mamba"
+    ok "Found mamba."
+elif command -v conda &> /dev/null; then
+    CONDA_TOOL="conda"
+    ok "Found conda (mamba not available)."
+else
+    fail "Neither mamba nor conda found. Please install one before running this script."
+fi
 
-# --- Main logic for assemblies ---
-def process_assemblies(csv_file):
-    print("🔍 Reading CSV and checking files...\n")
-    missing = []
-    renamed = 0
-    unzipped = 0
-    indexed = 0
+# --- Step 2: Download latest release assets (.py and .yml) ---
+echo ""
+echo "🔽 Fetching latest InVNTR release from GitHub..."
+RELEASE_JSON=$(curl -fsSL "https://api.github.com/repos/${GITHUB_REPO}/releases/latest")
+RELEASE_TAG=$(echo "$RELEASE_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+log "Latest release: $RELEASE_TAG"
 
-    with open(csv_file, newline='', encoding="utf-8-sig") as csvfile:
-        reader = csv.DictReader(csvfile)
-        rows = list(reader)
+ENV_YML=""
+# Parse asset names and download URLs using python3 for reliable JSON parsing
+while IFS=$'\t' read -r name url; do
+    if [[ "$name" == *.py ]] || [[ "$name" == *.yml ]]; then
+        if [ -f "$name" ]; then
+            ok "$name already exists, skipping."
+        else
+            info "Downloading $name ..."
+            wget -O "$name" "$url" || fail "wget failed for $name"
+            ok "Downloaded $name."
+        fi
+        if [[ "$name" == *.yml ]]; then
+            ENV_YML="$name"
+        fi
+    fi
+done < <(echo "$RELEASE_JSON" | python3 -c "
+import sys, json
+assets = json.load(sys.stdin).get('assets', [])
+for a in assets:
+    print(a['name'] + '\t' + a['browser_download_url'])
+")
 
-    # Step 1: Find missing files
-    for row in rows:
-        old = row.get("Old_Filename", "").strip()
-        new = row.get("Filename", "").strip()
-        url = row.get("online_location", "").strip()
-        if not old:
+if [ -z "$ENV_YML" ]; then
+    fail "No .yml file found in the latest release. Cannot create conda environment."
+fi
+
+# --- Step 3: Create conda environment ---
+echo ""
+echo "🐍 Checking for '$CONDA_ENV_NAME' conda environment..."
+if $CONDA_TOOL env list | grep -q "^${CONDA_ENV_NAME}\s"; then
+    ok "'$CONDA_ENV_NAME' environment already exists, skipping creation."
+else
+    log "Creating '$CONDA_ENV_NAME' environment from $ENV_YML ..."
+    $CONDA_TOOL env create -f "$ENV_YML" || fail "Failed to create conda environment."
+    ok "Environment '$CONDA_ENV_NAME' created."
+fi
+
+# Activate the environment
+log "Activating '$CONDA_ENV_NAME' environment..."
+# Source conda init so that activation works in a non-interactive shell
+CONDA_BASE=$(conda info --base)
+source "${CONDA_BASE}/etc/profile.d/conda.sh"
+conda activate "$CONDA_ENV_NAME"
+ok "Environment '$CONDA_ENV_NAME' is active."
+
+# --- Step 4: Download CSV manifest ---
+echo ""
+echo "📥 Downloading manifest: $CSV_NAME ..."
+wget_file "${GITHUB_RAW_BASE}/${CSV_NAME}" "${LR_DIR}/${CSV_NAME}"
+CSV_PATH="${LR_DIR}/${CSV_NAME}"
+
+# --- Step 5: Check if assemblies already extracted ---
+echo ""
+echo "📂 Checking if assemblies already present in $LR_DIR/..."
+
+# Read Filename column from CSV (skip header, handle UTF-8 BOM)
+FILENAMES=$(python3 -c "
+import csv, sys
+with open('${CSV_PATH}', newline='', encoding='utf-8-sig') as f:
+    for row in csv.DictReader(f):
+        fn = row.get('Filename','').strip()
+        if fn:
+            print(fn)
+")
+
+ALL_PRESENT=true
+while IFS= read -r fname; do
+    if [ ! -f "${LR_DIR}/${fname}" ]; then
+        ALL_PRESENT=false
+        break
+    fi
+done <<< "$FILENAMES"
+
+if [ "$ALL_PRESENT" = true ]; then
+    ok "All assembly files already present in $LR_DIR/, skipping .agc download and extraction."
+else
+    # --- Step 5a: Download .agc ---
+    echo ""
+    echo "📦 Downloading .agc archive: $AGC_NAME ..."
+    AGC_PATH="${LR_DIR}/${AGC_NAME}"
+    wget_file "$AGC_URL" "$AGC_PATH"
+
+    # --- Step 5b: Extract assemblies ---
+    echo ""
+    echo "🗜️  Extracting assemblies from $AGC_PATH ..."
+    SAMPLE_NAMES=$(python3 -c "
+import csv, sys
+with open('${CSV_PATH}', newline='', encoding='utf-8-sig') as f:
+    for row in csv.DictReader(f):
+        fn = row.get('Filename','').strip()
+        if fn:
+            name = fn[:-3] if fn.endswith('.fa') else fn
+            print(name)
+")
+
+    TOTAL=$(echo "$SAMPLE_NAMES" | wc -l | tr -d ' ')
+    COUNT=0
+    FAILED=()
+
+    while IFS= read -r name; do
+        COUNT=$((COUNT + 1))
+        OUT_PATH="${LR_DIR}/${name}.fa"
+        if [ -f "$OUT_PATH" ]; then
+            ok "[$COUNT/$TOTAL] $OUT_PATH already exists, skipping."
             continue
-        if not os.path.exists(old) and not os.path.exists(new):
-            print(f"❌ Missing {old}")
-            missing.append((old, url))
+        fi
+        log "[$COUNT/$TOTAL] Extracting $name → $OUT_PATH ..."
+        if agc getset "$AGC_PATH" "$name" > "$OUT_PATH"; then
+            ok "Extracted $name."
+        else
+            warn "Failed to extract $name."
+            FAILED+=("$name")
+        fi
+    done <<< "$SAMPLE_NAMES"
 
-    # Count VCF files that will be downloaded later, for the grand total
-    vcf_needed = sum(
-        1 for url in [KG_SITES_VCF, KG_SITES_TBI]
-        if not os.path.exists(url.split("/")[-1])
-    )
+    if [ ${#FAILED[@]} -gt 0 ]; then
+        warn "${#FAILED[@]} sample(s) failed to extract: ${FAILED[*]}"
+    else
+        ok "Extraction complete — $TOTAL file(s) written."
+    fi
 
-    total_to_download = len(missing) + vcf_needed
-    print(f"\n📊 Download summary:")
-    print(f"   Assembly files missing : {len(missing)}")
-    print(f"   VCF files missing      : {vcf_needed}")
-    print(f"   Total files to download: {total_to_download}\n")
+    # --- Step 5c: Delete .agc ---
+    log "Removing $AGC_PATH ..."
+    rm -f "$AGC_PATH" && ok "Deleted $AGC_PATH." || warn "Could not delete $AGC_PATH."
+fi
 
-    if not missing:
-        print("✅ All assembly files present.\n")
-    else:
-        s3_jobs   = [(old, url) for old, url in missing if url.startswith("s3://")]
-        http_jobs = [(old, url) for old, url in missing if not url.startswith("s3://") and url]
-        no_url    = [(old, url) for old, url in missing if not url]
+# --- Step 6: Download 1000 Genomes VCF files ---
+echo ""
+echo "🧬 Downloading 1000 Genomes GRCh38 sites-only VCF..."
+VCF_FILENAME=$(basename "$KG_SITES_VCF")
+TBI_FILENAME=$(basename "$KG_SITES_TBI")
+wget_file "$KG_SITES_VCF" "${LR_DIR}/${VCF_FILENAME}"
+wget_file "$KG_SITES_TBI" "${LR_DIR}/${TBI_FILENAME}"
 
-        for old, _ in no_url:
-            print(f"⚠️  No online location for {old}")
+# --- Step 7: Verify all expected files ---
+echo ""
+echo "🧾 Verifying final file list..."
+MISSING=0
+while IFS= read -r fname; do
+    if [ ! -f "${LR_DIR}/${fname}" ]; then
+        echo "  ❌ Missing: ${LR_DIR}/${fname}"
+        MISSING=$((MISSING + 1))
+    fi
+done <<< "$FILENAMES"
 
-        print(f"⬇️  Downloading {len(s3_jobs)} S3 files and {len(http_jobs)} HTTP files "
-              f"({MAX_WORKERS} at a time)...\n")
+if [ "$MISSING" -eq 0 ]; then
+    ok "All files accounted for."
+else
+    warn "$MISSING file(s) still missing after extraction."
+fi
 
-        completed = 0
-        total_assembly = len(s3_jobs) + len(http_jobs)
-        all_jobs = [(old, url) for old, url in missing if url]
+# --- Step 8: Generate .fai index for reference sequences ---
+echo ""
+echo "🧬 Generating .fai index files for reference sequences (Haplotype == 'ref')..."
+INDEXED=0
+while IFS=$'\t' read -r hap fasta; do
+    FASTA_PATH="${LR_DIR}/${fasta}"
+    FAI_PATH="${FASTA_PATH}.fai"
+    if [ ! -f "$FASTA_PATH" ]; then
+        warn "Skipping $fasta — file not found."
+        continue
+    fi
+    if [ -f "$FAI_PATH" ]; then
+        ok "$FAI_PATH already exists."
+        INDEXED=$((INDEXED + 1))
+        continue
+    fi
+    log "Indexing $fasta ..."
+    if samtools faidx "$FASTA_PATH"; then
+        ok "Created $FAI_PATH."
+        INDEXED=$((INDEXED + 1))
+    else
+        warn "Failed to index $fasta."
+    fi
+done < <(python3 -c "
+import csv, sys
+with open('${CSV_PATH}', newline='', encoding='utf-8-sig') as f:
+    for row in csv.DictReader(f):
+        hap = row.get('Haplotype','').strip().lower()
+        fn  = row.get('Filename','').strip()
+        if hap == 'ref' and fn:
+            print(hap + '\t' + fn)
+")
 
-        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-            futures = {executor.submit(download_and_verify, old, url): old
-                       for old, url in all_jobs}
-            for future in as_completed(futures):
-                old, success, msg = future.result()
-                completed += 1
-                tprint(f"  [{completed}/{total_assembly}] {msg}")
+ok "Indexed $INDEXED reference file(s)."
 
-    # Step 2: Rename uncompressed FASTA files
-    print("\n🔄 Renaming uncompressed .fasta files...")
-    for row in rows:
-        old = row.get("Old_Filename", "").strip()
-        new = row.get("Filename", "").strip()
-        if old.endswith(".gz") or not old:
-            continue
-        if os.path.exists(old) and not os.path.exists(new):
-            os.rename(old, new)
-            print(f"    🔁 {old} → {new}")
-            renamed += 1
-    print(f"✅ Renamed {renamed} file(s).")
-
-    # Step 3: Unzip .gz files and rename
-    print("\n🗜️  Unzipping and renaming .gz files...")
-    for row in rows:
-        old = row.get("Old_Filename", "").strip()
-        new = row.get("Filename", "").strip()
-        if not old.endswith(".gz"):
-            continue
-        if os.path.exists(old):
-            unzipped_name = unzip_with_pigz(old)
-            if unzipped_name:
-                os.rename(unzipped_name, new)
-                print(f"    🔁 {unzipped_name} → {new}")
-                unzipped += 1
-    print(f"✅ Unzipped and renamed {unzipped} file(s).")
-
-    # Step 4: Final verification
-    print("\n🧾 Verifying final file list...")
-    missing_final = 0
-    for row in rows:
-        new = row.get("Filename", "").strip()
-        if not os.path.exists(new):
-            print(f"❌ Missing final file: {new}")
-            missing_final += 1
-    if missing_final == 0:
-        print("✅ All files accounted for and properly named.")
-    else:
-        print(f"⚠️ {missing_final} file(s) still missing at the end.")
-
-    # Step 5: Generate .fai for reference sequences
-    print("\n🧬 Generating .fai index files for reference (Haplotype == 'ref')...")
-    for row in rows:
-        hap = row.get("Haplotype", "").strip().lower()
-        fasta = row.get("Filename", "").strip()
-        if hap == "ref" and fasta and os.path.exists(fasta):
-            if generate_fai(fasta):
-                indexed += 1
-    print(f"✅ Indexed {indexed} reference file(s).")
-
-# --- Main entry ---
-def main():
-    args = parse_args()
-    csv_file = download_csv(testing=args.testing)
-    process_assemblies(csv_file)
-    download_1000g_vcfs()
-
-if __name__ == "__main__":
-    main()
+echo ""
+echo "🎉 Setup complete! Activate your environment with: mamba activate invntr / conda activate invtr"
+echo ""
